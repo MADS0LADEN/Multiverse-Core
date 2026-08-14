@@ -56,16 +56,20 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
      * scheduled instead of running on the Server thread.
      */
     private void setupSpawnAndPurge(@NotNull World world) {
-        Location spawn = world.getSpawnLocation();
+        Location spawn = PluginScheduler.spawnLocationOrOrigin(world);
         if (PluginScheduler.isOwnedByCurrentRegion(spawn)) {
             setupSpawnLocation(world);
             purgeEntitiesOnLoad();
             return;
         }
-        PluginScheduler.executeAtLocation(spawn, () -> {
-            setupSpawnLocation(world);
-            purgeEntitiesOnLoad();
-        });
+        try {
+            PluginScheduler.executeAtLocation(spawn, () -> {
+                setupSpawnLocation(world);
+                purgeEntitiesOnLoad();
+            });
+        } catch (RuntimeException e) {
+            Logging.fine("Deferring spawn setup for '%s': %s", getName(), e.getMessage());
+        }
     }
 
     private void setupWorldConfig(World world) {

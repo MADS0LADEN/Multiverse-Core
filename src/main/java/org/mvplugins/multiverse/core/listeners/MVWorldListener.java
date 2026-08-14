@@ -66,10 +66,11 @@ final class MVWorldListener implements CoreListener {
     @EventMethod
     @DefaultEventPriority(EventPriority.MONITOR)
     void worldLoad(WorldLoadEvent event) {
-        worldManager.getUnloadedWorld(event.getWorld().getName())
+        worldManager.getWorld(event.getWorld())
+                .filter(world -> !worldManager.isLoadedWorld(world))
                 .peek(world -> {
                     Logging.fine("Loading world: " + world.getName());
-                    worldManager.loadWorld(LoadWorldOptions.world(world)).onFailure(failure -> {
+                    worldManager.loadWorld(LoadWorldOptions.world(world).doFolderCheck(false)).onFailure(failure -> {
                         if (failure.getFailureReason() != LoadFailureReason.WORLD_ALREADY_LOADING) {
                             Logging.severe("Failed to load world: " + failure);
                         }

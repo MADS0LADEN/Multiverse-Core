@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import com.dumptruckman.minecraft.util.Logging;
@@ -20,6 +21,7 @@ import jakarta.inject.Provider;
 import org.bukkit.Bukkit;
 import org.bukkit.GameRule;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
@@ -207,13 +209,18 @@ public final class WorldManager {
     private void importExistingWorlds() {
         Map<String, World> bukkitWorlds = Bukkit.getWorlds()
                 .stream()
-                .collect(Collectors.toMap(World::getName, Function.identity()));
+                .collect(Collectors.toMap(World::getName, Function.identity(), (left, right) -> left));
 
         serverProperties.getLevelName().peek(overworldName -> {
-            //TODO: check by namespaced key instead
-            World overworld = bukkitWorlds.remove(overworldName);
-            World nether = bukkitWorlds.remove(DimensionFinder.DEFAULT_NETHER_FORMAT.replaceOverworld(overworldName));
-            World end = bukkitWorlds.remove(DimensionFinder.DEFAULT_END_FORMAT.replaceOverworld(overworldName));
+            World overworld = takeBukkitWorld(bukkitWorlds, overworldName, NamespacedKey.minecraft("overworld"));
+            World nether = takeBukkitWorld(
+                    bukkitWorlds,
+                    DimensionFinder.DEFAULT_NETHER_FORMAT.replaceOverworld(overworldName),
+                    NamespacedKey.minecraft("the_nether"));
+            World end = takeBukkitWorld(
+                    bukkitWorlds,
+                    DimensionFinder.DEFAULT_END_FORMAT.replaceOverworld(overworldName),
+                    NamespacedKey.minecraft("the_end"));
 
             if (config.getAutoImportDefaultWorlds()) {
                 importExistingBukkitWorld(overworld);
@@ -227,30 +234,67 @@ public final class WorldManager {
         }
     }
 
+    private static World takeBukkitWorld(
+            @NotNull Map<String, World> bukkitWorlds,
+            @NotNull String worldName,
+            @NotNull NamespacedKey worldKey) {
+        World byName = bukkitWorlds.remove(worldName);
+        if (byName != null) {
+            return byName;
+        }
+        World byKey = bukkitWorlds.values().stream()
+                .filter(world -> world.getKey().equals(worldKey) || world.getName().equalsIgnoreCase(worldName))
+                .findFirst()
+                .orElse(null);
+        if (byKey != null) {
+            bukkitWorlds.remove(byKey.getName());
+        }
+        return byKey;
+    }
+
     private void importExistingBukkitWorld(World bukkitWorld) {
-        Option.of(bukkitWorld)
-                .filter(world -> !isWorld(world.getName()))
-                .map(world -> importWorld(
-                        ImportWorldOptions.worldName(world.getName())
-                                .environment(world.getEnvironment())
-                                .generator(generatorProvider.getDefaultGeneratorForWorld(world.getName())))
-                        .onFailure(failure ->
-                                Logging.severe("Failed to import world %s: %s", world.getName(), failure))
-                        .onSuccess(newMVWorld ->
-                                Logging.fine("Imported existing world %s", newMVWorld.getName())));
+        if (bukkitWorld == null) {
+            return;
+        }
+        Option<MultiverseWorld> knownWorld = getWorld(bukkitWorld);
+        if (knownWorld.isDefined()) {
+            knownWorld.filter(world -> !isLoadedWorld(world))
+                    .peek(world -> loadWorld(LoadWorldOptions.world(world).doFolderCheck(false))
+                            .onFailure(failure -> Logging.severe(
+                                    "Failed to wrap already-loaded world %s: %s",
+                                    world.getName(),
+                                    failure))
+                            .onSuccess(loaded ->
+                                    Logging.fine("Wrapped already-loaded world %s", loaded.getName())));
+            return;
+        }
+        importWorld(
+                ImportWorldOptions.worldName(bukkitWorld.getName())
+                        .environment(bukkitWorld.getEnvironment())
+                        .generator(generatorProvider.getDefaultGeneratorForWorld(bukkitWorld.getName())))
+                .onFailure(failure ->
+                        Logging.severe("Failed to import world %s: %s", bukkitWorld.getName(), failure))
+                .onSuccess(newMVWorld ->
+                        Logging.fine("Imported existing world %s", newMVWorld.getName()));
     }
 
     /**
-     * Loads all worlds that are set to autoload.
+     * Loads all worlds that are set to autoload, and wraps Bukkit worlds that are already loaded.
      */
     private void autoLoadWorlds() {
         getWorlds().stream()
-                .filter(world -> !isLoadedWorld(world) && world.isAutoLoad())
-                .forEach(world -> loadWorld(LoadWorldOptions.world(world))
-                        .onFailure(failure ->
-                                Logging.severe("Failed to autoload world %s: %s", world.getName(), failure))
-                        .onSuccess(newMVWorld ->
-                                Logging.fine("Autoloaded world %s", newMVWorld.getName())));
+                .filter(world -> !isLoadedWorld(world))
+                .forEach(world -> {
+                    Option<World> bukkitWorld = findBukkitWorld(world);
+                    if (!world.isAutoLoad() && bukkitWorld.isEmpty()) {
+                        return;
+                    }
+                    loadWorld(LoadWorldOptions.world(world).doFolderCheck(bukkitWorld.isEmpty()))
+                            .onFailure(failure -> Logging.severe(
+                                    "Failed to autoload world %s: %s", world.getName(), failure))
+                            .onSuccess(newMVWorld ->
+                                    Logging.fine("Autoloaded world %s", newMVWorld.getName()));
+                });
     }
 
     /**
@@ -508,7 +552,7 @@ public final class WorldManager {
     private Attempt<LoadedMultiverseWorld, LoadFailureReason> doLoadWorld(@NotNull LoadWorldOptions options) {
         MultiverseWorld mvWorld = options.world();
 
-        World bukkitWorld = Bukkit.getWorld(mvWorld.getName());
+        World bukkitWorld = findBukkitWorld(mvWorld).getOrNull();
         if (bukkitWorld != null) {
             return doLoadBukkitWorld(bukkitWorld, mvWorld);
         }
@@ -550,10 +594,9 @@ public final class WorldManager {
     private Attempt<LoadedMultiverseWorld, LoadFailureReason> newLoadedMultiverseWorld(MultiverseWorld mvWorld, World bukkitWorld) {
         WorldConfig worldConfig = mvWorld.getWorldConfig();
 
-        if (worldConfig.getWorldKeyOrName().isName() && mvWorld.getName().equalsIgnoreCase(bukkitWorld.getName())) {
-            // do migration of namespaced key
-            Logging.info("Migrating world config for '%s' to use namespaced key '%s'...",
-                    mvWorld.getName(), bukkitWorld.getKey());
+        if (!bukkitWorld.getKey().equals(mvWorld.getKey())) {
+            Logging.info("Migrating world config for '%s' from key '%s' to Bukkit key '%s'...",
+                    mvWorld.getName(), mvWorld.getKey(), bukkitWorld.getKey());
             worldConfig = worldsConfigManager.migrateWorldConfigKey(worldConfig, bukkitWorld.getKey());
             mvWorld.setWorldConfig(worldConfig);
         }
@@ -971,13 +1014,33 @@ public final class WorldManager {
     private LoadedMultiverseWorld constructLoadedMultiverseWorld(
             @NotNull World world,
             @NotNull WorldConfig worldConfig) {
-        return pluginScheduler.callAtLocation(world.getSpawnLocation(), () -> new LoadedMultiverseWorld(
+        Supplier<LoadedMultiverseWorld> create = () -> new LoadedMultiverseWorld(
                 world,
                 worldConfig,
                 config,
                 blockSafety,
                 locationManipulation,
-                entityPurger));
+                entityPurger);
+        try {
+            return pluginScheduler.callAtLocation(
+                    PluginScheduler.spawnLocationOrOrigin(world),
+                    create);
+        } catch (RuntimeException e) {
+            Logging.warning("Region hop failed while wrapping world %s, wrapping inline: %s",
+                    world.getName(),
+                    e.getMessage());
+            return create.get();
+        }
+    }
+
+    private Option<World> findBukkitWorld(@NotNull MultiverseWorld mvWorld) {
+        return BukkitCompatibility.getWorldByNameOrKey(mvWorld.getWorldConfig().getWorldKeyOrName())
+                .orElse(() -> Option.of(Bukkit.getWorld(mvWorld.getName())))
+                .orElse(() -> Option.of(Bukkit.getWorlds().stream()
+                        .filter(world -> world.getName().equalsIgnoreCase(mvWorld.getName())
+                                || world.getKey().equals(mvWorld.getKey()))
+                        .findFirst()
+                        .orElse(null)));
     }
 
     /**
@@ -1064,7 +1127,10 @@ public final class WorldManager {
      * @return The world if it exists.
      */
     public Option<MultiverseWorld> getWorld(@Nullable World world) {
-        return Option.of(world).map(World::getName).flatMap(this::getWorld);
+        if (world == null) {
+            return Option.none();
+        }
+        return getWorld(world.getName()).orElse(() -> worldStore.getWorld(world.getKey()));
     }
 
     /**
@@ -1167,7 +1233,10 @@ public final class WorldManager {
      * @return The multiverse world if it exists.
      */
     public Option<LoadedMultiverseWorld> getLoadedWorld(@Nullable World world) {
-        return Option.of(world).flatMap(notNullWorld -> getLoadedWorld(notNullWorld.getName()));
+        if (world == null) {
+            return Option.none();
+        }
+        return getLoadedWorld(world.getName()).orElse(() -> worldStore.getLoadedWorld(world.getKey()));
     }
 
     /**
@@ -1222,7 +1291,7 @@ public final class WorldManager {
      * @return True if the world is a multiverse world that is loaded.
      */
     public boolean isLoadedWorld(@Nullable World world) {
-        return world != null && isLoadedWorld(world.getName());
+        return world != null && (isLoadedWorld(world.getName()) || worldStore.isLoadedWorld(world.getKey()));
     }
 
     /**

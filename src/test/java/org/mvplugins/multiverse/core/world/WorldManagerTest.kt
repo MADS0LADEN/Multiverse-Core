@@ -327,6 +327,19 @@ class WorldManagerTest : TestWithMockBukkit() {
     }
 
     @Test
+    fun `Load wraps a Bukkit world that is already loaded`() {
+        val unloadedWorld = worldManager.unloadWorld(
+            UnloadWorldOptions.world(world).unloadBukkitWorld(false)
+        ).get()
+        assertFalse(worldManager.isLoadedWorld("world"))
+        assertNotNull(Bukkit.getWorld("world"))
+        assertTrue(
+            worldManager.loadWorld(LoadWorldOptions.world(unloadedWorld).doFolderCheck(false)).isSuccess
+        )
+        assertTrue(worldManager.isLoadedWorld("world"))
+    }
+
+    @Test
     fun `Set different value - MVWorldPropertyChangedEvent event is fired`() {
         server.pluginManager.clearEvents()
         world.scale = 8.0
