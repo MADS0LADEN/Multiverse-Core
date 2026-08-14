@@ -68,7 +68,8 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
                 purgeEntitiesOnLoad();
             });
         } catch (RuntimeException e) {
-            Logging.fine("Deferring spawn setup for '%s': %s", getName(), e.getMessage());
+            Logging.fine("Scheduling spawn setup for '%s' on the next region tick: %s",
+                    getName(), e.getMessage());
         }
     }
 

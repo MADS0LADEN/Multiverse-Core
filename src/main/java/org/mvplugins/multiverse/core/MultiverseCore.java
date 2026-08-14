@@ -28,6 +28,7 @@ import org.mvplugins.multiverse.core.economy.MVEconomist;
 import org.mvplugins.multiverse.core.listeners.CoreListener;
 import org.mvplugins.multiverse.core.inject.PluginServiceLocatorFactory;
 import org.mvplugins.multiverse.core.module.MultiverseModule;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.StringFormatter;
 import org.mvplugins.multiverse.core.utils.compatibility.ServerPlatform;
 import org.mvplugins.multiverse.core.world.WorldManager;
@@ -102,10 +103,11 @@ public class MultiverseCore extends MultiverseModule {
         // Build it here so our logger can work, and failure messages will be logged
         SpawnCategoryMapper.buildSpawnCategoryMap();
 
-        // Initialize the worlds
+        // Locales, commands and listeners do not need a ticking region. World wrap
+        // (createWorld / setPVP / gamerules) must run on the global tick, so on Folia
+        // it is deferred until that loop exists.
         Try.run(() -> {
             setUpLocales();
-            worldManagerProvider.get().initAllWorlds();
             loadEconomist(); // Setup economy here so vault is loaded
             loadAnchors();
             registerDynamicListeners(CoreListener.class);
@@ -114,13 +116,29 @@ public class MultiverseCore extends MultiverseModule {
             setupMetrics();
             loadPlaceholderApiIntegration();
             loadApiService();
-            saveAllConfigs();
+            initializeWorlds();
             logEnableMessage();
         }).onFailure(e -> {
             Logging.severe("Failed to multiverse core! Disabling...");
             e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);
         });
+    }
+
+    private void initializeWorlds() {
+        Runnable loadWorlds = () -> worldManagerProvider.get().initAllWorlds()
+                .andThenTry(this::saveAllConfigs)
+                .onFailure(ex -> {
+                    Logging.severe("Failed to load worlds from config: %s", ex.getMessage());
+                    ex.printStackTrace();
+                });
+        PluginScheduler scheduler = getServiceLocator().getService(PluginScheduler.class);
+        if (ServerPlatform.isRegionized() && !ServerPlatform.isGlobalTickThread()) {
+            Logging.info("Deferring world load until the global tick is running...");
+            scheduler.runDelayed(loadWorlds, 1L);
+            return;
+        }
+        loadWorlds.run();
     }
 
     /**

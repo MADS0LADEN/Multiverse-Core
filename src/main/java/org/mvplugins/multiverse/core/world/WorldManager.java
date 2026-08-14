@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import com.dumptruckman.minecraft.util.Logging;
@@ -891,8 +890,7 @@ public final class WorldManager {
             }
 
             if (!options.keepGameRule()) {
-                PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(), () ->
-                        Arrays.stream(bukkitWorld.getGameRules())
+                PluginScheduler.executeOnGlobalTick(() -> Arrays.stream(bukkitWorld.getGameRules())
                         .map(gameRuleName -> GameRule.getByName(gameRuleName))
                         .filter(Objects::nonNull)
                         .forEach(gameRule -> {
@@ -1005,32 +1003,19 @@ public final class WorldManager {
     }
 
     /**
-     * Builds a loaded world on the destination spawn region.
-     *
-     * <p>{@link org.bukkit.Bukkit#createWorld} stays on the global tick. Spawn-safety
-     * ({@code Block.getType}) and world-config apply must run on this world's region,
-     * not the player's overworld region and not the global scheduler.</p>
+     * Builds a loaded Multiverse world. World-level settings apply on the global tick;
+     * spawn-safety reads blocks on the destination region.
      */
     private LoadedMultiverseWorld constructLoadedMultiverseWorld(
             @NotNull World world,
             @NotNull WorldConfig worldConfig) {
-        Supplier<LoadedMultiverseWorld> create = () -> new LoadedMultiverseWorld(
+        return new LoadedMultiverseWorld(
                 world,
                 worldConfig,
                 config,
                 blockSafety,
                 locationManipulation,
                 entityPurger);
-        try {
-            return pluginScheduler.callAtLocation(
-                    PluginScheduler.spawnLocationOrOrigin(world),
-                    create);
-        } catch (RuntimeException e) {
-            Logging.warning("Region hop failed while wrapping world %s, wrapping inline: %s",
-                    world.getName(),
-                    e.getMessage());
-            return create.get();
-        }
     }
 
     private Option<World> findBukkitWorld(@NotNull MultiverseWorld mvWorld) {

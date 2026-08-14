@@ -68,11 +68,10 @@ public final class SpawnCategoryConfig {
             return;
         }
         loadedWorld.getBukkitWorld().peek(bukkitWorld ->
-                PluginScheduler.executeAtLocation(
-                        PluginScheduler.spawnLocationOrOrigin(bukkitWorld), () -> {
-                            applyTickPerSpawns(bukkitWorld);
-                            applySpawnLimit(bukkitWorld);
-                        }));
+                PluginScheduler.executeOnGlobalTick(() -> {
+                    applyTickPerSpawns(bukkitWorld);
+                    applySpawnLimit(bukkitWorld);
+                }));
     }
 
     private void applyTickPerSpawns(@NotNull World bukkitWorld) {

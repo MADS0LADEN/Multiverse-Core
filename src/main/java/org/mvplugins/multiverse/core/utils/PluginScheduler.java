@@ -21,7 +21,10 @@ import org.mvplugins.multiverse.core.MultiverseCore;
 import org.mvplugins.multiverse.core.utils.compatibility.ServerPlatform;
 
 /**
- * Wraps Paper/Folia region schedulers with a Bukkit scheduler fallback for MockBukkit and older servers.
+ * Folia/Canvas scheduler hops. Global tick is for world create/unload and CraftWorld
+ * server settings. Region tick is for blocks/entities at a location. Never use the
+ * async scheduler for those APIs. Never call {@code Bukkit.getCurrentTick()} to decide
+ * whether to hop.
  */
 @Service
 public final class PluginScheduler {
@@ -36,7 +39,7 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a task on the next server tick.
+     * Runs a task on the next global tick.
      *
      * @param task the task to run
      */
@@ -49,7 +52,7 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a task after the given delay in ticks.
+     * Runs a task after the given delay in ticks on the global scheduler.
      *
      * @param task the task to run
      * @param delayTicks the delay in ticks
@@ -64,7 +67,8 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a task asynchronously.
+     * Runs a task asynchronously. Do not use this for world create, PVP, gamerules,
+     * ticks-per-spawn, or block reads.
      *
      * @param task the task to run
      */
@@ -77,11 +81,11 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a task on the global tick thread, waiting if a hop is required.
+     * Runs a task on the global tick thread.
      *
-     * <p>Use this only for {@code Bukkit.createWorld()} / unload. Block reads, PVP, gamerules,
-     * and ticks-per-spawn must use {@link #callAtLocation(Location, Supplier)} instead.
-     * Hopping to the global scheduler for those APIs still fails Folia's region ownership check.</p>
+     * <p>Use this for {@code Bukkit.createWorld()} / unload, {@code World.setPVP},
+     * {@code setGameRule}, {@code setTicksPerSpawns}, {@code setDifficulty}, and other
+     * CraftWorld server settings. Do not use this for {@code Block.getType}.</p>
      *
      * @param task the task to run
      */
@@ -93,31 +97,35 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a value-returning task on the global tick thread, waiting if a hop is required.
+     * Runs a value-returning task on the global tick thread.
+     *
+     * <p>Inline when already on the global tick or when the server is not regionized.
+     * Otherwise hops with {@code GlobalRegionScheduler.execute} and waits. Callers on
+     * the Server thread during {@code onEnable} must not use this; defer with
+     * {@link #runDelayed(Runnable, long)} onto the global tick first.</p>
      *
      * @param action the action to run
      * @param <T> the result type
      * @return the action result
      */
     public <T> T callOnGlobalTick(@NotNull Supplier<T> action) {
-        if (!needsGlobalTickHop()) {
+        if (shouldRunOnGlobalTickInline()) {
             return action.get();
         }
-        return hopToGlobalTick(action);
+        return hopToGlobalTick(plugin, action);
     }
 
     /**
-     * Looks up this service and runs {@link #runOnGlobalTick(Runnable)}.
+     * Looks up this service and runs work on the global tick.
      *
      * @param task the task to run
      */
     public static void executeOnGlobalTick(@NotNull Runnable task) {
-        if (!needsGlobalTickHop()) {
+        if (shouldRunOnGlobalTickInline()) {
             task.run();
             return;
         }
-        MultiverseCore core = JavaPlugin.getPlugin(MultiverseCore.class);
-        core.getServiceLocator().getService(PluginScheduler.class).hopToGlobalTick(() -> {
+        hopToGlobalTick(JavaPlugin.getPlugin(MultiverseCore.class), () -> {
             task.run();
             return null;
         });
@@ -125,10 +133,6 @@ public final class PluginScheduler {
 
     /**
      * Returns whether the current thread owns the region for this location.
-     *
-     * <p>On Paper, Spigot, and MockBukkit this is always true. On Folia/Canvas it is
-     * {@link Bukkit#isOwnedByCurrentRegion(Location)} — not "any region thread" and
-     * not the global tick thread.</p>
      *
      * @param location the location whose region to check
      * @return true if block reads at this location are legal on this thread
@@ -148,16 +152,16 @@ public final class PluginScheduler {
     }
 
     /**
-     * Returns whether this thread may block waiting for a scheduler hop.
+     * Returns whether this thread is a Folia/Canvas region tick thread.
      *
-     * <p>During {@code onEnable} ({@code currentTick() <= 0}) waiting deadlocks because
-     * region ticks have not started. Callers must then schedule fire-and-forget instead
-     * of running block or world-setting mutations inline.</p>
-     *
-     * @return true if hopping and waiting is safe
+     * @return true if waiting for a scheduler hop is safe
      */
-    public static boolean canWaitForSchedulerHop() {
-        return currentTick() > 0;
+    public static boolean isOnRegionTickThread() {
+        if (!ServerPlatform.isRegionized() || ServerPlatform.isGlobalTickThread()) {
+            return false;
+        }
+        String name = Thread.currentThread().getName();
+        return name.contains("Region Scheduler") || name.contains("Region Thread");
     }
 
     /**
@@ -175,34 +179,25 @@ public final class PluginScheduler {
     }
 
     /**
-     * Runs a task on the region that owns this location. Never waits.
+     * Runs a task on the region that owns this location.
      *
-     * <p>Inline when this thread already owns the location (or the server is not
-     * regionized). Otherwise schedules on {@code RegionScheduler} and returns.</p>
+     * <p>Use this for {@code Block.getType}, spawn-safety, and other block/chunk work.
+     * Do not use this for {@code setPVP} / gamerules / ticks-per-spawn.</p>
      *
      * @param location the location whose region should run the task
      * @param task the task to run
      */
     public void runAtLocation(@NotNull Location location, @NotNull Runnable task) {
-        if (isOwnedByCurrentRegion(location)) {
-            task.run();
-            return;
-        }
-        scheduleAtLocation(plugin, location, task);
+        executeAtLocation(plugin, location, task);
     }
 
     /**
      * Runs a value-returning task on the region that owns this location.
      *
-     * <p>Inline when this thread already owns the location, when the server is not
-     * regionized, or during startup (cannot wait). After the server is ticking,
-     * hops with {@code RegionScheduler.execute} and waits so import/load can finish
-     * spawn-safety before answering the player.</p>
-     *
      * @param location the location whose region should run the action
      * @param action the action to run
      * @param <T> the result type
-     * @return the action result
+     * @return the action result, or {@code null} when the work was deferred
      */
     public <T> T callAtLocation(@NotNull Location location, @NotNull Supplier<T> action) {
         return callAtLocation(plugin, location, action);
@@ -210,9 +205,6 @@ public final class PluginScheduler {
 
     /**
      * Looks up this plugin and runs a task on the location's region.
-     *
-     * <p>No plugin lookup when the task can run inline. During startup this schedules
-     * without waiting. After the server is ticking this hops and waits.</p>
      *
      * @param location the location whose region should run the task
      * @param task the task to run
@@ -222,50 +214,50 @@ public final class PluginScheduler {
             task.run();
             return;
         }
-        JavaPlugin javaPlugin = JavaPlugin.getPlugin(MultiverseCore.class);
-        if (!canWaitForSchedulerHop()) {
-            scheduleAtLocation(javaPlugin, location, task);
+        executeAtLocation(JavaPlugin.getPlugin(MultiverseCore.class), location, task);
+    }
+
+    private static void executeAtLocation(
+            @NotNull JavaPlugin javaPlugin,
+            @NotNull Location location,
+            @NotNull Runnable task) {
+        if (isOwnedByCurrentRegion(location)) {
+            task.run();
             return;
         }
-        hopToLocation(javaPlugin, location, () -> {
-            task.run();
-            return null;
-        });
+        if (isOnRegionTickThread()) {
+            hopToLocation(javaPlugin, location, () -> {
+                task.run();
+                return null;
+            });
+            return;
+        }
+        scheduleAtLocation(javaPlugin, location, task);
     }
 
     private static <T> T callAtLocation(
             @NotNull JavaPlugin javaPlugin,
             @NotNull Location location,
             @NotNull Supplier<T> action) {
-        if (isOwnedByCurrentRegion(location) || !canWaitForSchedulerHop()) {
+        if (isOwnedByCurrentRegion(location)) {
             return action.get();
         }
-        return hopToLocation(javaPlugin, location, action);
+        if (isOnRegionTickThread()) {
+            return hopToLocation(javaPlugin, location, action);
+        }
+        scheduleAtLocation(javaPlugin, location, action::get);
+        return null;
     }
 
-    private static boolean needsGlobalTickHop() {
-        if (!ServerPlatform.isRegionized() || !ServerPlatform.hasRegionScheduler()) {
-            return false;
-        }
-        if (ServerPlatform.isGlobalTickThread()) {
-            return false;
-        }
-        // Startup is allowed to create worlds. Hopping before the global tick loop
-        // starts would deadlock onEnable waiting for a tick that has not begun.
-        return currentTick() > 0;
+    private static boolean shouldRunOnGlobalTickInline() {
+        return !ServerPlatform.isRegionized()
+                || !ServerPlatform.hasRegionScheduler()
+                || ServerPlatform.isGlobalTickThread();
     }
 
-    private static int currentTick() {
-        try {
-            return Bukkit.getCurrentTick();
-        } catch (NoSuchMethodError | UnsupportedOperationException e) {
-            return 0;
-        }
-    }
-
-    private <T> T hopToGlobalTick(@NotNull Supplier<T> action) {
+    private static <T> T hopToGlobalTick(@NotNull JavaPlugin javaPlugin, @NotNull Supplier<T> action) {
         CompletableFuture<T> future = new CompletableFuture<>();
-        Bukkit.getServer().getGlobalRegionScheduler().execute(plugin, () -> {
+        Bukkit.getGlobalRegionScheduler().execute(javaPlugin, () -> {
             try {
                 future.complete(action.get());
             } catch (Throwable throwable) {
@@ -297,8 +289,6 @@ public final class PluginScheduler {
         try {
             Bukkit.getRegionScheduler().execute(javaPlugin, location, task);
         } catch (IllegalStateException e) {
-            // Nether/end often have no ticking region during onEnable. Retry once
-            // the global scheduler is running instead of failing world wrap.
             Bukkit.getGlobalRegionScheduler().runDelayed(javaPlugin, scheduled -> {
                 try {
                     Bukkit.getRegionScheduler().execute(javaPlugin, location, task);
