@@ -5,12 +5,14 @@ import org.mvplugins.multiverse.core.utils.PluginScheduler
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ServerPlatformTest : TestWithMockBukkit() {
 
     @Test
     fun `MockBukkit is not a regionized Folia or CanvasMC server`() {
         assertFalse(ServerPlatform.isRegionized())
+        assertTrue(ServerPlatform.isGlobalTickThread())
         assertNotNull(ServerPlatform.getBrandName())
     }
 
@@ -21,6 +23,14 @@ class ServerPlatformTest : TestWithMockBukkit() {
         var ran = false
         scheduler.runNextTick { ran = true }
         server.scheduler.performOneTick()
-        kotlin.test.assertTrue(ran)
+        assertTrue(ran)
+    }
+
+    @Test
+    fun `callOnGlobalTick runs immediately on MockBukkit`() {
+        val scheduler = serviceLocator.getActiveService(PluginScheduler::class.java)
+        assertNotNull(scheduler)
+        val result = scheduler.callOnGlobalTick { "ok" }
+        kotlin.test.assertEquals("ok", result)
     }
 }

@@ -9,6 +9,7 @@ import org.bukkit.GameRule;
 import org.bukkit.World;
 import org.jvnet.hk2.annotations.Service;
 import org.mvplugins.multiverse.core.config.handle.StringPropertyHandle;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.compatibility.WorldBorderCompatibility;
 import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
 import org.mvplugins.multiverse.core.world.MultiverseWorld;
@@ -85,7 +86,8 @@ public interface DataStore<T> {
         }
 
         private <T> Try<Void> setGameRuleValue(World world, GameRule<T> gameRule, Object value) {
-            return Try.run(() -> world.setGameRule(gameRule, (T) value));
+            return Try.run(() -> PluginScheduler.executeOnGlobalTick(
+                    () -> world.setGameRule(gameRule, (T) value)));
         }
     }
 
