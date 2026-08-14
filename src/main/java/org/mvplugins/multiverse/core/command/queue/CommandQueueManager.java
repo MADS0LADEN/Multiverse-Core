@@ -14,20 +14,17 @@ import java.util.WeakHashMap;
 import com.dumptruckman.minecraft.util.Logging;
 import io.vavr.control.Option;
 import jakarta.inject.Inject;
-import org.bukkit.Bukkit;
 import org.bukkit.block.data.type.CommandBlock;
 import org.bukkit.command.BlockCommandSender;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
 
-import org.mvplugins.multiverse.core.MultiverseCore;
 import org.mvplugins.multiverse.core.command.MVCommandIssuer;
 import org.mvplugins.multiverse.core.config.CoreConfig;
 import org.mvplugins.multiverse.core.locale.MVCorei18n;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.result.Attempt;
 
 import static org.mvplugins.multiverse.core.locale.message.MessageReplacement.*;
@@ -45,14 +42,16 @@ public class CommandQueueManager {
     private static final String COMMAND_BLOCK_NAME = "@commandblock";
     private static final long TICKS_PER_SECOND = 20;
 
-    private final Plugin plugin;
     private final CoreConfig config;
+    private final PluginScheduler pluginScheduler;
     private final Map<String, CommandQueuePayload> queuedCommandMap;
 
     @Inject
-    CommandQueueManager(@NotNull MultiverseCore plugin, @NotNull CoreConfig config) {
-        this.plugin = plugin;
+    CommandQueueManager(
+            @NotNull CoreConfig config,
+            @NotNull PluginScheduler pluginScheduler) {
         this.config = config;
+        this.pluginScheduler = pluginScheduler;
         this.queuedCommandMap = new WeakHashMap<>();
     }
 
@@ -104,12 +103,11 @@ public class CommandQueueManager {
      * Expire task that removes a {@link CommandQueuePayload} from queue after valid duration defined.
      *
      * @param senderName    The name of the sender.
-     * @return The expire {@link BukkitTask}.
+     * @return The expire {@link PluginScheduler.PluginTask}.
      */
     @NotNull
-    private BukkitTask runExpireLater(@NotNull String senderName, int validDuration) {
-        return Bukkit.getScheduler().runTaskLater(
-                this.plugin,
+    private PluginScheduler.PluginTask runExpireLater(@NotNull String senderName, int validDuration) {
+        return pluginScheduler.runDelayed(
                 expireRunnable(senderName),
                 validDuration * TICKS_PER_SECOND);
     }
@@ -166,7 +164,7 @@ public class CommandQueueManager {
             Logging.finer("No queue command to remove for sender %s.", senderName);
             return;
         }
-        Option.of(payload.expireTask()).peek(BukkitTask::cancel);
+        Option.of(payload.expireTask()).peek(PluginScheduler.PluginTask::cancel);
         Logging.finer("Removed queue command for sender %s.", senderName);
     }
 

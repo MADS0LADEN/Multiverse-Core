@@ -1,12 +1,13 @@
 package org.mvplugins.multiverse.core.command.queue;
 
 import co.aikar.commands.ACFUtil;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
 import org.mvplugins.multiverse.core.command.MVCommandIssuer;
 import org.mvplugins.multiverse.core.locale.MVCorei18n;
 import org.mvplugins.multiverse.core.locale.message.Message;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 
 /**
  * Represents a single command used in {@link CommandQueueManager} for confirming before running potentially
@@ -28,7 +29,7 @@ public class CommandQueuePayload {
     private String otp;
     private Runnable action = () -> {};
     private Message prompt = Message.of(MVCorei18n.QUEUECOMMAND_DEFAULTPROMPT);
-    private BukkitTask expireTask;
+    private PluginScheduler.PluginTask expireTask;
 
     protected CommandQueuePayload(@NotNull MVCommandIssuer issuer) {
         this.otp = String.valueOf(ACFUtil.rand(100, 999));
@@ -104,12 +105,12 @@ public class CommandQueuePayload {
         return prompt;
     }
 
-    void expireTask(BukkitTask expireTask) {
+    void expireTask(PluginScheduler.PluginTask expireTask) {
         this.expireTask = expireTask;
     }
 
     @Nullable
-    BukkitTask expireTask() {
+    PluginScheduler.PluginTask expireTask() {
         return expireTask;
     }
 }

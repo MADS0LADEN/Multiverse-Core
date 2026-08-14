@@ -12,6 +12,7 @@ import org.mvplugins.multiverse.core.teleportation.AsyncSafetyTeleporter
 import org.mvplugins.multiverse.core.teleportation.BlockSafety
 import org.mvplugins.multiverse.core.teleportation.LocationManipulation
 import org.mvplugins.multiverse.core.teleportation.TeleportQueue
+import org.mvplugins.multiverse.core.utils.PluginScheduler
 import org.mvplugins.multiverse.core.world.WorldManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +55,11 @@ class InjectionTest : TestWithMockBukkit() {
     @Test
     fun `TeleportQueue is available as a service`() {
         assertNotNull(serviceLocator.getActiveService(TeleportQueue::class.java))
+    }
+
+    @Test
+    fun `PluginScheduler is available as a service`() {
+        assertNotNull(serviceLocator.getActiveService(PluginScheduler::class.java))
     }
 
     @Test
