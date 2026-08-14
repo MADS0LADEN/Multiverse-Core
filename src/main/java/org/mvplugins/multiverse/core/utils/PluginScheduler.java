@@ -10,6 +10,7 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import jakarta.inject.Inject;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -160,6 +161,20 @@ public final class PluginScheduler {
     }
 
     /**
+     * Returns the world's spawn location, or the world origin if spawn cannot be read yet.
+     *
+     * @param world the world
+     * @return a location in that world
+     */
+    public static @NotNull Location spawnLocationOrOrigin(@NotNull World world) {
+        try {
+            return world.getSpawnLocation();
+        } catch (IllegalStateException e) {
+            return new Location(world, 0, 0, 0);
+        }
+    }
+
+    /**
      * Runs a task on the region that owns this location. Never waits.
      *
      * <p>Inline when this thread already owns the location (or the server is not
@@ -279,7 +294,22 @@ public final class PluginScheduler {
             @NotNull JavaPlugin javaPlugin,
             @NotNull Location location,
             @NotNull Runnable task) {
-        Bukkit.getRegionScheduler().execute(javaPlugin, location, task);
+        try {
+            Bukkit.getRegionScheduler().execute(javaPlugin, location, task);
+        } catch (IllegalStateException e) {
+            // Nether/end often have no ticking region during onEnable. Retry once
+            // the global scheduler is running instead of failing world wrap.
+            Bukkit.getGlobalRegionScheduler().runDelayed(javaPlugin, scheduled -> {
+                try {
+                    Bukkit.getRegionScheduler().execute(javaPlugin, location, task);
+                } catch (IllegalStateException retryFailed) {
+                    Bukkit.getGlobalRegionScheduler().runDelayed(
+                            javaPlugin,
+                            ignored -> scheduleAtLocation(javaPlugin, location, task),
+                            20L);
+                }
+            }, 1L);
+        }
     }
 
     private static <T> T awaitHop(@NotNull CompletableFuture<T> future, @NotNull String where) {
