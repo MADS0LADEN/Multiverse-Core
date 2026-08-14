@@ -3,6 +3,7 @@ package org.mvplugins.multiverse.core.world;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import com.dumptruckman.minecraft.util.Logging;
 import io.vavr.control.Option;
@@ -27,6 +28,7 @@ import org.mvplugins.multiverse.core.config.node.ListConfigNode;
 import org.mvplugins.multiverse.core.config.node.NodeGroup;
 import org.mvplugins.multiverse.core.economy.MVEconomist;
 import org.mvplugins.multiverse.core.utils.MaterialConverter;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.text.ChatTextFormatter;
 import org.mvplugins.multiverse.core.world.helpers.AliasNameConflictChecker;
 import org.mvplugins.multiverse.core.world.helpers.EnforcementHandler;
@@ -47,6 +49,7 @@ final class WorldConfigNodes {
     private CoreConfig config;
     private AliasNameConflictChecker aliasNameConflictChecker;
     private MVCommandManager commandManager;
+    private PluginScheduler pluginScheduler;
     private WorldKeyOrName keyOrName;
     private MultiverseWorld world = null;
 
@@ -56,6 +59,7 @@ final class WorldConfigNodes {
         this.config = multiverseCore.getServiceLocator().getService(CoreConfig.class);
         this.aliasNameConflictChecker = multiverseCore.getServiceLocator().getService(AliasNameConflictChecker.class);
         this.commandManager  = multiverseCore.getServiceLocator().getService(MVCommandManager.class);
+        this.pluginScheduler = multiverseCore.getServiceLocator().getService(PluginScheduler.class);
         this.keyOrName = keyOrName;
     }
 
@@ -89,6 +93,14 @@ final class WorldConfigNodes {
         ConfigNode<T> node = nodeBuilder.build();
         nodes.add(node);
         return node;
+    }
+
+    private void mutateBukkitWorld(Consumer<World> mutation) {
+        if (!(world instanceof LoadedMultiverseWorld loadedWorld)) {
+            return;
+        }
+        loadedWorld.getBukkitWorld().peek(bukkitWorld ->
+                pluginScheduler.runOnGlobalTick(() -> mutation.accept(bukkitWorld)));
     }
 
     // BEGIN CHECKSTYLE-SUPPRESSION: Javadoc
@@ -126,11 +138,10 @@ final class WorldConfigNodes {
     final ConfigNode<Boolean> allowWeather = node(ConfigNode.builder("allow-weather", Boolean.class)
             .defaultValue(true)
             .onLoadAndChange((oldValue, newValue) -> {
-                if (!(world instanceof LoadedMultiverseWorld loadedWorld)) return;
-                loadedWorld.getBukkitWorld().peek(world -> {
-                    if (!world.isClearWeather() && !newValue) {
-                        world.setThundering(false);
-                        world.setStorm(false);
+                mutateBukkitWorld(bukkitWorld -> {
+                    if (!bukkitWorld.isClearWeather() && !newValue) {
+                        bukkitWorld.setThundering(false);
+                        bukkitWorld.setStorm(false);
                     }
                 });
             }));
@@ -153,10 +164,8 @@ final class WorldConfigNodes {
 
     final ConfigNode<Difficulty> difficulty = node(ConfigNode.builder("difficulty", Difficulty.class)
             .defaultValue(Difficulty.NORMAL)
-            .onLoadAndChange((oldValue, newValue) -> {
-                if (!(world instanceof LoadedMultiverseWorld loadedWorld)) return;
-                loadedWorld.getBukkitWorld().peek(bukkitWorld -> bukkitWorld.setDifficulty(newValue));
-            }));
+            .onLoadAndChange((oldValue, newValue) ->
+                    mutateBukkitWorld(bukkitWorld -> bukkitWorld.setDifficulty(newValue))));
 
     final ConfigNode<Boolean> entryFeeEnabled = node(ConfigNode.builder("entry-fee.enabled", Boolean.class)
             .defaultValue(false)
@@ -215,8 +224,7 @@ final class WorldConfigNodes {
             .builder("keep-spawn-in-memory", Boolean.class)
             .defaultValue(true)
             .onLoadAndChange((sender, oldValue, newValue) -> {
-                if (!(world instanceof LoadedMultiverseWorld loadedWorld)) return;
-                loadedWorld.getBukkitWorld().peek(bukkitWorld -> {
+                mutateBukkitWorld(bukkitWorld -> {
                     bukkitWorld.setKeepSpawnInMemory(newValue);
                     if (bukkitWorld.getKeepSpawnInMemory() != newValue) {
                         sender.sendMessage(ChatColor.RED + "Keep spawn in memory feature has been removed by " +
@@ -238,10 +246,8 @@ final class WorldConfigNodes {
 
     final ConfigNode<Boolean> pvp = node(ConfigNode.builder("pvp", Boolean.class)
             .defaultValue(true)
-            .onLoadAndChange((oldValue, newValue) -> {
-                if (!(world instanceof LoadedMultiverseWorld loadedWorld)) return;
-                loadedWorld.getBukkitWorld().peek(bukkitWorld -> bukkitWorld.setPVP(newValue));
-            }));
+            .onLoadAndChange((oldValue, newValue) ->
+                    mutateBukkitWorld(bukkitWorld -> bukkitWorld.setPVP(newValue))));
 
     final ConfigNode<String> respawnWorld = node(ConfigNode.builder("respawn-world", String.class)
             .defaultValue("")
@@ -264,9 +270,10 @@ final class WorldConfigNodes {
             .defaultValue(NullSpawnLocation.get())
             .hidden()
             .onLoadAndChange((oldValue, newValue) -> {
-                if (!(world instanceof LoadedMultiverseWorld loadedWorld)) return;
-                if (newValue == null || newValue instanceof NullSpawnLocation) return;
-                loadedWorld.getBukkitWorld().peek(bukkitWorld -> {
+                if (newValue == null || newValue instanceof NullSpawnLocation) {
+                    return;
+                }
+                mutateBukkitWorld(bukkitWorld -> {
                     newValue.setWorld(bukkitWorld);
                     bukkitWorld.setSpawnLocation(newValue);
                 });

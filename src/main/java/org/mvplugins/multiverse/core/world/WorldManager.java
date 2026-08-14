@@ -47,13 +47,14 @@ import org.mvplugins.multiverse.core.locale.message.MessageReplacement.Replace;
 import org.mvplugins.multiverse.core.permissions.CorePermissions;
 import org.mvplugins.multiverse.core.teleportation.BlockSafety;
 import org.mvplugins.multiverse.core.teleportation.LocationManipulation;
+import org.mvplugins.multiverse.core.utils.FileUtils;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.ServerProperties;
 import org.mvplugins.multiverse.core.utils.compatibility.BukkitCompatibility;
 import org.mvplugins.multiverse.core.utils.compatibility.WorldCompatibility;
 import org.mvplugins.multiverse.core.utils.compatibility.WorldCreatorCompatibility;
 import org.mvplugins.multiverse.core.utils.result.Attempt;
 import org.mvplugins.multiverse.core.utils.result.FailureReason;
-import org.mvplugins.multiverse.core.utils.FileUtils;
 import org.mvplugins.multiverse.core.world.biomeprovider.BiomeProviderFactory;
 import org.mvplugins.multiverse.core.world.entity.EntityPurger;
 import org.mvplugins.multiverse.core.world.generators.GeneratorProvider;
@@ -111,6 +112,7 @@ public final class WorldManager {
     private final CoreConfig config;
     private final EntityPurger entityPurger;
     private final Provider<PotentialWorldFinder> potentialWorldFinder;
+    private final PluginScheduler pluginScheduler;
 
     @Inject
     WorldManager(
@@ -127,7 +129,8 @@ public final class WorldManager {
             @NotNull ServerProperties serverProperties,
             @NotNull CoreConfig config,
             @NotNull EntityPurger entityPurger,
-            @NotNull Provider<PotentialWorldFinder> potentialWorldFinder) {
+            @NotNull Provider<PotentialWorldFinder> potentialWorldFinder,
+            @NotNull PluginScheduler pluginScheduler) {
         this.worldStore = worldStore;
         this.worldsConfigManager = worldsConfigManager;
         this.worldNameChecker = worldNameChecker;
@@ -142,6 +145,7 @@ public final class WorldManager {
         this.config = config;
         this.entityPurger = entityPurger;
         this.potentialWorldFinder = potentialWorldFinder;
+        this.pluginScheduler = pluginScheduler;
 
         this.unloadTracker = new ArrayList<>();
         this.loadTracker = new ArrayList<>();
@@ -858,7 +862,7 @@ public final class WorldManager {
             }
 
             if (!options.keepGameRule()) {
-                Arrays.stream(bukkitWorld.getGameRules())
+                PluginScheduler.executeOnGlobalTick(() -> Arrays.stream(bukkitWorld.getGameRules())
                         .map(gameRuleName -> GameRule.getByName(gameRuleName))
                         .filter(Objects::nonNull)
                         .forEach(gameRule -> {
@@ -866,7 +870,7 @@ public final class WorldManager {
                             if (gameRuleDefault != null) {
                                 bukkitWorld.setGameRule(gameRule, gameRuleDefault);
                             }
-                        });
+                        }));
             }
         });
     }
@@ -977,6 +981,10 @@ public final class WorldManager {
      * @return The created world.
      */
     private Attempt<World, WorldCreatorFailureReason> createBukkitWorld(WorldCreator worldCreator) {
+        return pluginScheduler.callOnGlobalTick(() -> createBukkitWorldNow(worldCreator));
+    }
+
+    private Attempt<World, WorldCreatorFailureReason> createBukkitWorldNow(WorldCreator worldCreator) {
         return Try.of(() -> {
             this.loadTracker.add(worldCreator.name());
             World world = worldCreator.createWorld();
@@ -1003,7 +1011,7 @@ public final class WorldManager {
      * @return The unloaded world.
      */
     private Try<Void> unloadBukkitWorld(World world, boolean save) {
-        return Try.run(() -> {
+        return pluginScheduler.callOnGlobalTick(() -> Try.run(() -> {
             if (world == null) {
                 return;
             }
@@ -1012,7 +1020,7 @@ public final class WorldManager {
                 throwUnloadException(world);
             }
             Logging.fine("Bukkit unloaded world: " + world.getName());
-        }).andFinally(() -> unloadTracker.remove(world.getName()));
+        }).andFinally(() -> unloadTracker.remove(world.getName())));
     }
 
     private void throwUnloadException(World world) throws MultiverseWorldException {

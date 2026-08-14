@@ -1,5 +1,8 @@
 package org.mvplugins.multiverse.core.utils.compatibility;
 
+import java.lang.reflect.Method;
+
+import io.vavr.control.Try;
 import org.bukkit.Bukkit;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -14,6 +17,10 @@ public final class ServerPlatform {
 
     private static final boolean REGIONIZED = ReflectHelper.hasClass(
             "io.papermc.paper.threadedregions.RegionizedServer");
+
+    private static final Try<Method> IS_GLOBAL_TICK_THREAD = ReflectHelper.tryGetClass(
+                    "io.papermc.paper.threadedregions.RegionizedServer")
+            .flatMap(clazz -> ReflectHelper.tryGetMethod(clazz, "isGlobalTickThread"));
 
     private static Boolean hasRegionScheduler;
 
@@ -48,6 +55,26 @@ public final class ServerPlatform {
             hasRegionScheduler = detectRegionScheduler();
         }
         return hasRegionScheduler;
+    }
+
+    /**
+     * Returns whether the current thread is Folia's global tick thread.
+     *
+     * <p>On non-regionized servers this is always true so callers can treat the
+     * current thread as safe for world create and server-setting mutations.</p>
+     *
+     * @return true if world create / setPVP / gamerules are legal on this thread
+     */
+    @ApiStatus.AvailableSince("5.8")
+    public static boolean isGlobalTickThread() {
+        if (!REGIONIZED) {
+            return true;
+        }
+        return IS_GLOBAL_TICK_THREAD
+                .flatMap(ReflectHelper::tryInvokeStaticMethod)
+                .filter(Boolean.class::isInstance)
+                .map(Boolean.class::cast)
+                .getOrElse(false);
     }
 
     /**

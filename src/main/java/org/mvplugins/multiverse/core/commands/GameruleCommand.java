@@ -37,6 +37,7 @@ import org.mvplugins.multiverse.core.display.parsers.MapContentProvider;
 import org.mvplugins.multiverse.core.locale.MVCorei18n;
 import org.mvplugins.multiverse.core.locale.message.Message;
 import org.mvplugins.multiverse.core.locale.message.MessageReplacement.Replace;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
 
 import static org.mvplugins.multiverse.core.locale.message.MessageReplacement.replace;
@@ -76,7 +77,12 @@ class GameruleCommand extends CoreCommand {
         for (LoadedMultiverseWorld world : worlds) {
             // Set gamerules and add false to list if it fails
             World bukkitWorld = world.getBukkitWorld().getOrNull();
-            if (bukkitWorld == null || !bukkitWorld.setGameRule(gamerule, value)) {
+            AtomicBoolean worldSuccess = new AtomicBoolean(false);
+            if (bukkitWorld != null) {
+                PluginScheduler.executeOnGlobalTick(() ->
+                        worldSuccess.set(bukkitWorld.setGameRule(gamerule, value)));
+            }
+            if (bukkitWorld == null || !worldSuccess.get()) {
                 issuer.sendError(MVCorei18n.GAMERULE_SET_FAILED,
                         Replace.GAMERULE.with(gamerule.getName()),
                         Replace.VALUE.with(value.toString()),
@@ -122,7 +128,12 @@ class GameruleCommand extends CoreCommand {
         Arrays.stream(worlds)
                 .forEach(world -> world.getBukkitWorld()
                         .flatMap(bukkitWorld -> Option.of(bukkitWorld.getGameRuleDefault(gamerule))
-                                .map(value -> bukkitWorld.setGameRule(gamerule, value)))
+                                .map(value -> {
+                                    AtomicBoolean worldSuccess = new AtomicBoolean(false);
+                                    PluginScheduler.executeOnGlobalTick(() ->
+                                            worldSuccess.set(bukkitWorld.setGameRule(gamerule, value)));
+                                    return worldSuccess.get();
+                                }))
                         .onEmpty(() -> {
                             success.set(false);
                             issuer.sendError(MVCorei18n.GAMERULE_RESET_FAILED,
