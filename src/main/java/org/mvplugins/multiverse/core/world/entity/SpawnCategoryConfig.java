@@ -67,10 +67,11 @@ public final class SpawnCategoryConfig {
         if (!(world instanceof LoadedMultiverseWorld loadedWorld)) {
             return;
         }
-        loadedWorld.getBukkitWorld().peek(bukkitWorld -> PluginScheduler.executeOnGlobalTick(() -> {
-            applyTickPerSpawns(bukkitWorld);
-            applySpawnLimit(bukkitWorld);
-        }));
+        loadedWorld.getBukkitWorld().peek(bukkitWorld ->
+                PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(), () -> {
+                    applyTickPerSpawns(bukkitWorld);
+                    applySpawnLimit(bukkitWorld);
+                }));
     }
 
     private void applyTickPerSpawns(@NotNull World bukkitWorld) {

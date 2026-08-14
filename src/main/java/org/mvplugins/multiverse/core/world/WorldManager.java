@@ -440,14 +440,7 @@ public final class WorldManager {
         worldConfig.save();
 
         newMultiverseWorld(worldConfig);
-        LoadedMultiverseWorld loadedWorld = new LoadedMultiverseWorld(
-                world,
-                worldConfig,
-                config,
-                blockSafety,
-                locationManipulation,
-                entityPurger
-        );
+        LoadedMultiverseWorld loadedWorld = constructLoadedMultiverseWorld(world, worldConfig);
         worldStore.putLoadedWorld(loadedWorld);
         saveWorldsConfig();
         pluginManager.callEvent(new MVWorldLoadedEvent(loadedWorld));
@@ -572,14 +565,7 @@ public final class WorldManager {
                     replace("{mvNamespace}").with(mvWorld.getKey()));
         }
 
-        LoadedMultiverseWorld loadedWorld = new LoadedMultiverseWorld(
-                bukkitWorld,
-                worldConfig,
-                config,
-                blockSafety,
-                locationManipulation,
-                entityPurger
-        );
+        LoadedMultiverseWorld loadedWorld = constructLoadedMultiverseWorld(bukkitWorld, worldConfig);
         worldStore.putLoadedWorld(loadedWorld);
         saveWorldsConfig();
         pluginManager.callEvent(new MVWorldLoadedEvent(loadedWorld));
@@ -862,7 +848,8 @@ public final class WorldManager {
             }
 
             if (!options.keepGameRule()) {
-                PluginScheduler.executeOnGlobalTick(() -> Arrays.stream(bukkitWorld.getGameRules())
+                PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(), () ->
+                        Arrays.stream(bukkitWorld.getGameRules())
                         .map(gameRuleName -> GameRule.getByName(gameRuleName))
                         .filter(Objects::nonNull)
                         .forEach(gameRule -> {
@@ -972,6 +959,25 @@ public final class WorldManager {
                                     Replace.ERROR.with(throwable));
                         },
                         Attempt::success);
+    }
+
+    /**
+     * Builds a loaded world on the destination spawn region.
+     *
+     * <p>{@link org.bukkit.Bukkit#createWorld} stays on the global tick. Spawn-safety
+     * ({@code Block.getType}) and world-config apply must run on this world's region,
+     * not the player's overworld region and not the global scheduler.</p>
+     */
+    private LoadedMultiverseWorld constructLoadedMultiverseWorld(
+            @NotNull World world,
+            @NotNull WorldConfig worldConfig) {
+        return pluginScheduler.callAtLocation(world.getSpawnLocation(), () -> new LoadedMultiverseWorld(
+                world,
+                worldConfig,
+                config,
+                blockSafety,
+                locationManipulation,
+                entityPurger));
     }
 
     /**

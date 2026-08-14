@@ -86,7 +86,7 @@ public interface DataStore<T> {
         }
 
         private <T> Try<Void> setGameRuleValue(World world, GameRule<T> gameRule, Object value) {
-            return Try.run(() -> PluginScheduler.executeOnGlobalTick(
+            return Try.run(() -> PluginScheduler.executeAtLocation(world.getSpawnLocation(),
                     () -> world.setGameRule(gameRule, (T) value)));
         }
     }

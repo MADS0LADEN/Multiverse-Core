@@ -61,9 +61,9 @@ public final class ServerPlatform {
      * Returns whether the current thread is Folia's global tick thread.
      *
      * <p>On non-regionized servers this is always true so callers can treat the
-     * current thread as safe for world create and server-setting mutations.</p>
+     * current thread as safe for {@code Bukkit.createWorld()}.</p>
      *
-     * @return true if world create / setPVP / gamerules are legal on this thread
+     * @return true if world create / unload are legal on this thread
      */
     @ApiStatus.AvailableSince("5.8")
     public static boolean isGlobalTickThread() {
