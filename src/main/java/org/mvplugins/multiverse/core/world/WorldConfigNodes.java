@@ -98,9 +98,7 @@ final class WorldConfigNodes {
             return;
         }
         loadedWorld.getBukkitWorld().peek(bukkitWorld ->
-                PluginScheduler.executeAtLocation(
-                        PluginScheduler.spawnLocationOrOrigin(bukkitWorld),
-                        () -> mutation.accept(bukkitWorld)));
+                PluginScheduler.executeOnGlobalTick(() -> mutation.accept(bukkitWorld)));
     }
 
     // BEGIN CHECKSTYLE-SUPPRESSION: Javadoc

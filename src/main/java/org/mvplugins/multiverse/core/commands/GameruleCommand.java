@@ -79,7 +79,7 @@ class GameruleCommand extends CoreCommand {
             World bukkitWorld = world.getBukkitWorld().getOrNull();
             AtomicBoolean worldSuccess = new AtomicBoolean(false);
             if (bukkitWorld != null) {
-                PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(), () ->
+                PluginScheduler.executeOnGlobalTick(() ->
                         worldSuccess.set(bukkitWorld.setGameRule(gamerule, value)));
             }
             if (bukkitWorld == null || !worldSuccess.get()) {
@@ -130,7 +130,7 @@ class GameruleCommand extends CoreCommand {
                         .flatMap(bukkitWorld -> Option.of(bukkitWorld.getGameRuleDefault(gamerule))
                                 .map(value -> {
                                     AtomicBoolean worldSuccess = new AtomicBoolean(false);
-                                    PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(), () ->
+                                    PluginScheduler.executeOnGlobalTick(() ->
                                             worldSuccess.set(bukkitWorld.setGameRule(gamerule, value)));
                                     return worldSuccess.get();
                                 }))

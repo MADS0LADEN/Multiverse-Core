@@ -19,6 +19,7 @@ import org.mvplugins.multiverse.core.command.MVCommandManager;
 import org.mvplugins.multiverse.core.config.CoreConfig;
 import org.mvplugins.multiverse.core.event.MVConfigReloadEvent;
 import org.mvplugins.multiverse.core.locale.MVCorei18n;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.world.WorldManager;
 
 @Service
@@ -28,18 +29,21 @@ class ReloadCommand extends CoreCommand {
     private final AnchorManager anchorManager;
     private final WorldManager worldManager;
     private final PluginManager pluginManager;
+    private final PluginScheduler pluginScheduler;
 
     @Inject
     ReloadCommand(
             @NotNull CoreConfig config,
             @NotNull AnchorManager anchorManager,
             @NotNull WorldManager worldManager,
-            @NotNull PluginManager pluginManager
+            @NotNull PluginManager pluginManager,
+            @NotNull PluginScheduler pluginScheduler
     ) {
         this.config = config;
         this.anchorManager = anchorManager;
         this.worldManager = worldManager;
         this.pluginManager = pluginManager;
+        this.pluginScheduler = pluginScheduler;
     }
 
     @Subcommand("reload")
@@ -49,7 +53,11 @@ class ReloadCommand extends CoreCommand {
         issuer.sendInfo(MVCorei18n.RELOAD_RELOADING);
         try {
             this.config.load().getOrElseThrow(e -> new RuntimeException("Failed to load config", e));
-            this.worldManager.initAllWorlds().getOrElseThrow(e -> new RuntimeException("Failed to init worlds", e));
+            pluginScheduler.callOnGlobalTick(() -> {
+                this.worldManager.initAllWorlds()
+                        .getOrElseThrow(e -> new RuntimeException("Failed to init worlds", e));
+                return null;
+            });
             this.anchorManager.loadAnchors().getOrElseThrow(e -> new RuntimeException("Failed to load anchors", e));
         } catch (Exception e) {
             e.printStackTrace();
@@ -70,8 +78,13 @@ class ReloadCommand extends CoreCommand {
     @Service
     private static final class LegacyAlias extends ReloadCommand implements LegacyAliasCommand {
         @Inject
-        LegacyAlias(@NotNull CoreConfig config, @NotNull AnchorManager anchorManager, @NotNull WorldManager worldManager, @NotNull PluginManager pluginManager) {
-            super(config, anchorManager, worldManager, pluginManager);
+        LegacyAlias(
+                @NotNull CoreConfig config,
+                @NotNull AnchorManager anchorManager,
+                @NotNull WorldManager worldManager,
+                @NotNull PluginManager pluginManager,
+                @NotNull PluginScheduler pluginScheduler) {
+            super(config, anchorManager, worldManager, pluginManager, pluginScheduler);
         }
 
         @Override

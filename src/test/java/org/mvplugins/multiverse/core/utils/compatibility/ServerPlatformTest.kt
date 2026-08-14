@@ -46,5 +46,9 @@ class ServerPlatformTest : TestWithMockBukkit() {
         var ran = false
         PluginScheduler.executeAtLocation(location) { ran = true }
         assertTrue(ran)
+        var globalRan = false
+        PluginScheduler.executeOnGlobalTick { globalRan = true }
+        assertTrue(globalRan)
+        assertFalse(PluginScheduler.isOnRegionTickThread())
     }
 }
