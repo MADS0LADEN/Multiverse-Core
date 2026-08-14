@@ -25,10 +25,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.plugin.Plugin;
 import org.jvnet.hk2.annotations.Service;
 
-import org.mvplugins.multiverse.core.MultiverseCore;
 import org.mvplugins.multiverse.core.command.MVCommandManager;
 import org.mvplugins.multiverse.core.config.CoreConfig;
 import org.mvplugins.multiverse.core.destination.DestinationInstance;
@@ -44,6 +42,7 @@ import org.mvplugins.multiverse.core.permissions.CorePermissionsChecker;
 import org.mvplugins.multiverse.core.teleportation.AsyncSafetyTeleporter;
 import org.mvplugins.multiverse.core.teleportation.BlockSafety;
 import org.mvplugins.multiverse.core.teleportation.TeleportQueue;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.result.ResultChain;
 import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
 import org.mvplugins.multiverse.core.world.MultiverseWorld;
@@ -58,7 +57,6 @@ import org.mvplugins.multiverse.core.world.helpers.EnforcementHandler;
  */
 @Service
 final class MVPlayerListener implements CoreListener {
-    private final Plugin plugin;
     private final CoreConfig config;
     private final Provider<WorldManager> worldManagerProvider;
     private final BlockSafety blockSafety;
@@ -72,10 +70,10 @@ final class MVPlayerListener implements CoreListener {
     private final DimensionFinder dimensionFinder;
     private final CorePermissionsChecker corePermissionsChecker;
     private final AsyncSafetyTeleporter asyncSafetyTeleporter;
+    private final PluginScheduler pluginScheduler;
 
     @Inject
     MVPlayerListener(
-            MultiverseCore plugin,
             CoreConfig config,
             Provider<WorldManager> worldManagerProvider,
             BlockSafety blockSafety,
@@ -88,8 +86,8 @@ final class MVPlayerListener implements CoreListener {
             EnforcementHandler enforcementHandler,
             DimensionFinder dimensionFinder,
             CorePermissionsChecker corePermissionsChecker,
-            AsyncSafetyTeleporter asyncSafetyTeleporter) {
-        this.plugin = plugin;
+            AsyncSafetyTeleporter asyncSafetyTeleporter,
+            PluginScheduler pluginScheduler) {
         this.config = config;
         this.worldManagerProvider = worldManagerProvider;
         this.blockSafety = blockSafety;
@@ -103,6 +101,7 @@ final class MVPlayerListener implements CoreListener {
         this.dimensionFinder = dimensionFinder;
         this.corePermissionsChecker = corePermissionsChecker;
         this.asyncSafetyTeleporter = asyncSafetyTeleporter;
+        this.pluginScheduler = pluginScheduler;
     }
 
     private WorldManager getWorldManager() {
@@ -432,8 +431,8 @@ final class MVPlayerListener implements CoreListener {
             doGameModeAndFlightEnforcement(player, world);
             return;
         }
-        server.getScheduler().runTaskLater(
-                this.plugin,
+        pluginScheduler.runAtEntityLater(
+                player,
                 () -> doGameModeAndFlightEnforcement(player, world),
                 config.getGamemodeAndFlightEnforceDelay()
         );

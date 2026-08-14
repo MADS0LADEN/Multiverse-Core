@@ -10,6 +10,7 @@ import org.jvnet.hk2.annotations.Service;
 
 import org.mvplugins.multiverse.core.MultiverseCore;
 import org.mvplugins.multiverse.core.destination.DestinationInstance;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 
 /**
  * Teleports entities safely and asynchronously. Provider for the {@link AsyncSafetyTeleporter}.
@@ -21,17 +22,20 @@ public final class AsyncSafetyTeleporter {
     private final BlockSafety blockSafety;
     private final TeleportQueue teleportQueue;
     private final PluginManager pluginManager;
+    private final PluginScheduler pluginScheduler;
 
     @Inject
     AsyncSafetyTeleporter(
             @NotNull MultiverseCore multiverseCore,
             @NotNull BlockSafety blockSafety,
             @NotNull TeleportQueue teleportQueue,
-            @NotNull PluginManager pluginManager) {
+            @NotNull PluginManager pluginManager,
+            @NotNull PluginScheduler pluginScheduler) {
         this.multiverseCore = multiverseCore;
         this.blockSafety = blockSafety;
         this.teleportQueue = teleportQueue;
         this.pluginManager = pluginManager;
+        this.pluginScheduler = pluginScheduler;
     }
 
     /**
@@ -46,6 +50,7 @@ public final class AsyncSafetyTeleporter {
                 blockSafety,
                 teleportQueue,
                 pluginManager,
+                pluginScheduler,
                 Either.left(location)
         );
     }
@@ -62,6 +67,7 @@ public final class AsyncSafetyTeleporter {
                 blockSafety,
                 teleportQueue,
                 pluginManager,
+                pluginScheduler,
                 Either.right(destination)
         );
     }

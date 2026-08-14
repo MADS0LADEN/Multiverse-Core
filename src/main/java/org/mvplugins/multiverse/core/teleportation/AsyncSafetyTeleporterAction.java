@@ -5,7 +5,6 @@ import com.dumptruckman.minecraft.util.Logging;
 import io.papermc.lib.PaperLib;
 import io.vavr.control.Either;
 import io.vavr.control.Try;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
@@ -17,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import org.mvplugins.multiverse.core.MultiverseCore;
 import org.mvplugins.multiverse.core.destination.DestinationInstance;
 import org.mvplugins.multiverse.core.event.MVTeleportDestinationEvent;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.utils.result.AsyncAttempt;
 import org.mvplugins.multiverse.core.utils.result.AsyncAttemptsAggregate;
 import org.mvplugins.multiverse.core.utils.result.Attempt;
@@ -34,6 +34,7 @@ public final class AsyncSafetyTeleporterAction {
     private final BlockSafety blockSafety;
     private final TeleportQueue teleportQueue;
     private final PluginManager pluginManager;
+    private final PluginScheduler pluginScheduler;
 
     private final @NotNull Either<Location, DestinationInstance<?, ?>> locationOrDestination;
     private boolean checkSafety;
@@ -45,11 +46,13 @@ public final class AsyncSafetyTeleporterAction {
             @NotNull BlockSafety blockSafety,
             @NotNull TeleportQueue teleportQueue,
             @NotNull PluginManager pluginManager,
+            @NotNull PluginScheduler pluginScheduler,
             @NotNull Either<Location, DestinationInstance<?, ?>> locationOrDestination) {
         this.multiverseCore = multiverseCore;
         this.blockSafety = blockSafety;
         this.teleportQueue = teleportQueue;
         this.pluginManager = pluginManager;
+        this.pluginScheduler = pluginScheduler;
         this.locationOrDestination = locationOrDestination;
         this.checkSafety = locationOrDestination.fold(
                 location -> true,
@@ -244,7 +247,7 @@ public final class AsyncSafetyTeleporterAction {
         return AsyncAttemptsAggregate.allOfAggregate(toTeleport.stream()
                         .map(passenger -> doAsyncTeleport(passenger, location))
                         .toList())
-                .onSuccess(() -> Bukkit.getScheduler().runTask(multiverseCore, () -> {
+                .onSuccess(() -> pluginScheduler.runAtEntity(teleportee, () -> {
                     passengers.forEach(teleportee::addPassenger);
                     Logging.finer("Mounted %d passengers to %s", passengers.size(), teleportee.getName());
                 }));
@@ -272,6 +275,6 @@ public final class AsyncSafetyTeleporterAction {
     private void applyPostTeleportVelocity(@NotNull Entity teleportee) {
         locationOrDestination.peek(destination ->
                 destination.getVelocity(teleportee).peek(velocity ->
-                        Bukkit.getScheduler().runTaskLater(multiverseCore, () -> teleportee.setVelocity(velocity), 1L)));
+                        pluginScheduler.runAtEntityLater(teleportee, () -> teleportee.setVelocity(velocity), 1L)));
     }
 }

@@ -1,15 +1,15 @@
 package org.mvplugins.multiverse.core.utils;
 
+import java.lang.reflect.Field;
+
 import com.dumptruckman.minecraft.util.Logging;
 import io.vavr.control.Option;
 import jakarta.inject.Inject;
 import org.bukkit.Server;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
-import org.mvplugins.multiverse.core.MultiverseCore;
 
-import java.lang.reflect.Field;
+import org.mvplugins.multiverse.core.utils.compatibility.ServerPlatform;
 
 /**
  * Defers action that cannot be done during world tick.
@@ -17,14 +17,16 @@ import java.lang.reflect.Field;
 @Service
 public final class WorldTickDeferrer {
 
-    private final MultiverseCore plugin;
+    private final PluginScheduler pluginScheduler;
 
     private final Option<Object> console;
     private final Option<Field> isIteratingOverLevelsMethod;
 
     @Inject
-    WorldTickDeferrer(@NotNull MultiverseCore plugin, @NotNull Server server) {
-        this.plugin = plugin;
+    WorldTickDeferrer(
+            @NotNull Server server,
+            @NotNull PluginScheduler pluginScheduler) {
+        this.pluginScheduler = pluginScheduler;
         this.console = ReflectHelper.tryGetMethod(server.getClass(), "getServer")
                 .onFailure(throwable -> Logging.fine("Unable to find getServer method."))
                 .flatMap(getServerMethod -> ReflectHelper.tryInvokeMethod(server, getServerMethod))
@@ -43,17 +45,12 @@ public final class WorldTickDeferrer {
      * @param action The action to defer
      */
     public void deferWorldTick(Runnable action) {
-        if (!isIteratingOverLevels()) {
+        if (!ServerPlatform.isRegionized() && !isIteratingOverLevels()) {
             action.run();
             return;
         }
         Logging.fine("Deferring world tick...");
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                action.run();
-            }
-        }.runTaskLater(this.plugin, 1L);
+        pluginScheduler.runDelayed(action, 1L);
     }
 
     /**

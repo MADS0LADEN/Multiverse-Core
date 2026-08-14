@@ -29,6 +29,7 @@ import org.mvplugins.multiverse.core.listeners.CoreListener;
 import org.mvplugins.multiverse.core.inject.PluginServiceLocatorFactory;
 import org.mvplugins.multiverse.core.module.MultiverseModule;
 import org.mvplugins.multiverse.core.utils.StringFormatter;
+import org.mvplugins.multiverse.core.utils.compatibility.ServerPlatform;
 import org.mvplugins.multiverse.core.world.WorldManager;
 import org.mvplugins.multiverse.core.world.entity.SpawnCategoryMapper;
 import org.mvplugins.multiverse.core.world.location.NullSpawnLocation;
@@ -233,6 +234,8 @@ public class MultiverseCore extends MultiverseModule {
     private void logEnableMessage() {
         Logging.config("\u001B[32mVersion %s (API v%s) Enabled - By %s\u001B[0m",
                 this.getDescription().getVersion(), getVersionAsNumber(), StringFormatter.joinAnd(getDescription().getAuthors()));
+        Logging.fine("Server platform: %s (regionized: %s)",
+                ServerPlatform.getBrandName(), ServerPlatform.isRegionized());
 
         if (configProvider.get().isShowingDonateMessage()) {
             Logging.config("\u001B[32mLoving Multiverse-Core? Please consider supporting the project with a " +
