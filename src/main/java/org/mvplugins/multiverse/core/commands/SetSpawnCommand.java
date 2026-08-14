@@ -1,5 +1,7 @@
 package org.mvplugins.multiverse.core.commands;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import co.aikar.commands.annotation.CommandAlias;
 import co.aikar.commands.annotation.CommandCompletion;
 import co.aikar.commands.annotation.CommandPermission;
@@ -20,6 +22,7 @@ import org.mvplugins.multiverse.core.command.flags.UnsafeFlags;
 import org.mvplugins.multiverse.core.locale.MVCorei18n;
 import org.mvplugins.multiverse.core.locale.message.MessageReplacement.Replace;
 import org.mvplugins.multiverse.core.teleportation.BlockSafety;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.world.WorldManager;
 
 @Service
@@ -56,9 +59,14 @@ class SetSpawnCommand extends CoreCommand {
         ParsedCommandFlags parsedFlags = flags.parse(flagArray);
         Location location = playerLocation.value();
 
-        if (!parsedFlags.hasFlag(flags.unsafe) && !blockSafety.canSpawnAtLocationSafely(location)) {
-            issuer.sendMessage(MVCorei18n.SETSPAWN_UNSAFE);
-            return;
+        if (!parsedFlags.hasFlag(flags.unsafe)) {
+            AtomicBoolean safe = new AtomicBoolean(false);
+            PluginScheduler.executeAtLocation(location,
+                    () -> safe.set(blockSafety.canSpawnAtLocationSafely(location)));
+            if (!safe.get()) {
+                issuer.sendMessage(MVCorei18n.SETSPAWN_UNSAFE);
+                return;
+            }
         }
 
         worldManager.getLoadedWorld(location.getWorld())

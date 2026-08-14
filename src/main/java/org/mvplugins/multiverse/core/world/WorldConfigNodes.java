@@ -49,7 +49,6 @@ final class WorldConfigNodes {
     private CoreConfig config;
     private AliasNameConflictChecker aliasNameConflictChecker;
     private MVCommandManager commandManager;
-    private PluginScheduler pluginScheduler;
     private WorldKeyOrName keyOrName;
     private MultiverseWorld world = null;
 
@@ -59,7 +58,6 @@ final class WorldConfigNodes {
         this.config = multiverseCore.getServiceLocator().getService(CoreConfig.class);
         this.aliasNameConflictChecker = multiverseCore.getServiceLocator().getService(AliasNameConflictChecker.class);
         this.commandManager  = multiverseCore.getServiceLocator().getService(MVCommandManager.class);
-        this.pluginScheduler = multiverseCore.getServiceLocator().getService(PluginScheduler.class);
         this.keyOrName = keyOrName;
     }
 
@@ -100,7 +98,8 @@ final class WorldConfigNodes {
             return;
         }
         loadedWorld.getBukkitWorld().peek(bukkitWorld ->
-                pluginScheduler.runOnGlobalTick(() -> mutation.accept(bukkitWorld)));
+                PluginScheduler.executeAtLocation(bukkitWorld.getSpawnLocation(),
+                        () -> mutation.accept(bukkitWorld)));
     }
 
     // BEGIN CHECKSTYLE-SUPPRESSION: Javadoc

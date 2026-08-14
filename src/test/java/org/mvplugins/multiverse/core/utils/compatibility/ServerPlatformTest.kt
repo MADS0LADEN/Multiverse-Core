@@ -33,4 +33,18 @@ class ServerPlatformTest : TestWithMockBukkit() {
         val result = scheduler.callOnGlobalTick { "ok" }
         kotlin.test.assertEquals("ok", result)
     }
+
+    @Test
+    fun `callAtLocation runs immediately on MockBukkit`() {
+        val scheduler = serviceLocator.getActiveService(PluginScheduler::class.java)
+        assertNotNull(scheduler)
+        val world = server.addSimpleWorld("region-hop-world")
+        val location = org.bukkit.Location(world, 0.0, 64.0, 0.0)
+        assertTrue(PluginScheduler.isOwnedByCurrentRegion(location))
+        val result = scheduler.callAtLocation(location) { "spawn-ok" }
+        kotlin.test.assertEquals("spawn-ok", result)
+        var ran = false
+        PluginScheduler.executeAtLocation(location) { ran = true }
+        assertTrue(ran)
+    }
 }

@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 import org.mvplugins.multiverse.core.config.CoreConfig;
 import org.mvplugins.multiverse.core.teleportation.BlockSafety;
 import org.mvplugins.multiverse.core.teleportation.LocationManipulation;
+import org.mvplugins.multiverse.core.utils.PluginScheduler;
 import org.mvplugins.multiverse.core.world.entity.EntityPurger;
 import org.mvplugins.multiverse.core.world.location.NullSpawnLocation;
 import org.mvplugins.multiverse.core.world.location.SpawnLocation;
@@ -46,8 +47,25 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
         this.entityPurger = entityPurger;
 
         setupWorldConfig(world);
-        setupSpawnLocation(world);
-        purgeEntitiesOnLoad();
+        setupSpawnAndPurge(world);
+    }
+
+    /**
+     * Spawn-safety reads blocks in this world. On Folia that is only legal on this world's
+     * region thread. During {@code onEnable} we cannot wait for that region, so the work is
+     * scheduled instead of running on the Server thread.
+     */
+    private void setupSpawnAndPurge(@NotNull World world) {
+        Location spawn = world.getSpawnLocation();
+        if (PluginScheduler.isOwnedByCurrentRegion(spawn)) {
+            setupSpawnLocation(world);
+            purgeEntitiesOnLoad();
+            return;
+        }
+        PluginScheduler.executeAtLocation(spawn, () -> {
+            setupSpawnLocation(world);
+            purgeEntitiesOnLoad();
+        });
     }
 
     private void setupWorldConfig(World world) {
